@@ -15,32 +15,38 @@ nltk.download('punkt')
 nltk.download('stopwords')
 nltk.download('wordnet')
 
+# Function to preprocess text
+def preprocess_text(text):
+    stop_words = set(stopwords.words('english'))
+    lemmatizer = WordNetLemmatizer()
+    words = word_tokenize(text)
+    cleaned_text = ' '.join(
+        [lemmatizer.lemmatize(word.lower()) for word in words if word.isalnum() and word not in stop_words]
+    )
+    return cleaned_text
+
 # Function to summarize text
-def summarize_text(text, max_length=50000):
+def summarize_text(text, chunk_size=500, max_length=100, min_length=50):
     summarization_pipeline = pipeline("summarization")
-    summary = summarization_pipeline(text, max_length=max_length, min_length=50, do_sample=False)
-    return summary[0]['summary_text']
+    chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
+    summaries = [
+        summarization_pipeline(chunk, max_length=max_length, min_length=min_length, do_sample=False)[0]['summary_text']
+        for chunk in chunks
+    ]
+    return ' '.join(summaries)
 
 # Function to extract keywords
 def extract_keywords(text):
-    stop_words = set(stopwords.words('english'))
-    lemmatizer = WordNetLemmatizer()
-
-    words = word_tokenize(text)
-    words = [lemmatizer.lemmatize(word.lower()) for word in words if word.isalnum()]
-    keywords = [word for word in words if word not in stop_words and len(word) > 1]
-
-    counter = CountVectorizer().fit_transform([' '.join(keywords)])
-    vocabulary = CountVectorizer().fit([' '.join(keywords)]).vocabulary_
-    top_keywords = sorted(vocabulary, key=vocabulary.get, reverse=True)[:5]
-
-    return top_keywords
+    processed_text = preprocess_text(text)
+    vectorizer = CountVectorizer(max_features=10).fit([processed_text])
+    return list(vectorizer.get_feature_names_out())
 
 # Function to perform topic modeling (LDA)
-def topic_modeling(text):
-    vectorizer = CountVectorizer(max_df=2, min_df=0.95, stop_words='english')
-    tf = vectorizer.fit_transform([text])
-    lda_model = LatentDirichletAllocation(n_components=5, max_iter=5, learning_method='online', random_state=42)
+def topic_modeling(text, n_topics=5):
+    processed_text = preprocess_text(text)
+    vectorizer = CountVectorizer(stop_words='english')
+    tf = vectorizer.fit_transform([processed_text])
+    lda_model = LatentDirichletAllocation(n_components=n_topics, max_iter=5, random_state=42)
     lda_model.fit(tf)
     feature_names = vectorizer.get_feature_names_out()
     topics = []
@@ -71,7 +77,7 @@ def main():
     video_url = st.text_input("Enter YouTube Video URL:", "")
 
     # User customization options
-    max_summary_length = st.slider("Max Summary Length:", 1000, 20000, 50000)
+    max_summary_length = st.slider("Max Summary Length (per chunk):", 50, 1000, 200)
 
     if st.button("Summarize"):
         try:
@@ -90,7 +96,7 @@ def main():
             video_text = ' '.join([line['text'] for line in transcript])
 
             # Summarize the transcript
-            summary = summarize_text(video_text, max_length=max_summary_length)
+            summary = summarize_text(video_text, chunk_size=500, max_length=max_summary_length)
 
             # Extract keywords from the transcript
             keywords = extract_keywords(video_text)
@@ -125,3 +131,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
